@@ -2,6 +2,7 @@ import Foundation
 import Darwin
 
 public protocol MokattamElement {
+    var y: Int {get set}
     var id: Int {get set}
     var height: Int {get}
     func display()
@@ -21,6 +22,7 @@ extension String: Printable {
     }
 }
 public class TextInput: MokattamElement {
+    public var y: Int = -1
     public var id: Int = -1
     
     public var height: Int = 1
@@ -108,6 +110,7 @@ public class TextInput: MokattamElement {
     public var mokattam: Mokattam?
 }
 public class ProgressBar: MokattamElement {
+    public var y: Int = -1
     public var id: Int = -1
     public var height: Int = 1
     
@@ -149,6 +152,7 @@ public class ProgressBar: MokattamElement {
     public var mokattam: Mokattam?
 }
 public class TextLabel: MokattamElement {
+    public var y: Int = -1
     public var text: String {
         didSet {
             mokattam?.update(id: id)
@@ -164,7 +168,118 @@ public class TextLabel: MokattamElement {
         self.text = text
     }
 }
+public enum TextAlignment {
+    case left
+    case right
+}
+public class Column<T> {
+    let name: Printable
+    let formatter: (T)->Printable
+    let alignment: TextAlignment
+    public init(name: String, formatter: @escaping (T)->Printable, alignment: TextAlignment = .left) {
+        self.name = name
+        self.formatter = formatter
+        self.alignment = alignment
+    }
+}
+public enum TableStyle {
+    case `default`
+    case simple(drawHeader: Bool)
+    
+    var drawHeader: Bool {
+        switch self {
+        case .default:
+            return true
+        case .simple(let drawHeader):
+            return drawHeader
+        }
+    }
+}
+public class Table<T>: MokattamElement {
+    public var y: Int = -1
+    public var id: Int = -1
+    public var data: [T]  = []{
+        didSet {
+            mokattam?.update(id: id)
+        }
+    }
+    public var height: Int {
+        return data.count + (style.drawHeader ? 1 : 0)
+    }
+    
+    
+    public var mokattam: Mokattam?
+    
+    let columns: [Column<T>]
+    let style: TableStyle
+    public init(columns: [Column<T>], style: TableStyle = .default) {
+        self.columns = columns
+        self.style = style
+    }
+    public func display() {
+        var text: [[Printable]] = []
+        var maxWidth: [Int] = [Int](repeating: 0, count: columns.count)
+        for object in data {
+            var row: [Printable] = []
+            for (index, column) in columns.enumerated() {
+                let str = column.formatter(object)
+                if str.count > maxWidth[index] {
+                    maxWidth[index] = str.count
+                }
+                row.append(str)
+            }
+            text.append(row)
+        }
+        
+        if style.drawHeader {
+            var str = ""
+            for (i, column) in columns.enumerated() {
+                let lengthOfContent = column.name.count
+                if lengthOfContent > maxWidth[i] {
+                    maxWidth[i] = lengthOfContent
+                }
+                let desiredLength = maxWidth[i]
+                let content = column.name.content
+                
+                let filler = String(repeating: " ", count: desiredLength - lengthOfContent)
+                let cell: String
+                switch column.alignment {
+                case .left:
+                    cell = content + filler
+                case .right:
+                    cell = filler + content
+                }
+                str += cell
+                str += " "
+            }
+            
+            print(str)
+        }
+        for row in text {
+            var str = ""
+            for (i,element) in row.enumerated() {
+                let column = columns[i]
+                let desiredLength = maxWidth[i]
+                let lengthOfContent = element.count
+                let filler = String(repeating: " ", count: desiredLength - lengthOfContent)
+                let cell: String
+                let content = element.rendered
+                switch column.alignment {
+                case .left:
+                    cell = content + filler
+                case .right:
+                    cell = filler + content
+                }
+                str += cell
+                
+                str += " "
+            }
+            print(str)
+        }
+    }
+}
 public class Select<T>: MokattamElement {
+    public var y: Int = -1
     public var id: Int = -1
     
     public var height: Int {
@@ -296,10 +411,13 @@ public class Mokattam {
     deinit {
         
     }
+    var cursorY: Int = 0
     public func append<T>(element e: T) -> T where T: MokattamElement {
         var element = e
         element.mokattam = self
         element.id = elements.count
+        element.y = cursorY
+        
         elements.append(element)
         
         update(id: element.id, initial: true)
@@ -315,9 +433,15 @@ public class Mokattam {
         write(code: "100D")
     }
     func moveUp(_ num: Int) {
+        guard num > 0 else {
+            return
+        }
         write(code: "\(num)A")
     }
     func moveDown(_ num: Int) {
+        guard num > 0 else {
+            return
+        }
         write(code: "\(num)B")
     }
     public var showCursor: Bool = true{
@@ -330,21 +454,37 @@ public class Mokattam {
         }
     }
     func update(id: Int, initial: Bool = false) {
-        var movedUp = 0
+        let element = elements[id]
+        
         if !initial {
-            for index in id..<elements.count {
-                let element = elements[index]
-                moveUp(element.height)
-                movedUp += element.height
-            }
+            moveUp(cursorY - element.y)
             clearLine()
             moveToBeginning()
         }else{
             moveToBeginning()
         }
         elements[id].display()
-        if movedUp > 1 {
-            moveDown(movedUp - 1)
+        
+        if elements.count > (id + 1) {
+            let next = elements[id + 1]
+            if next.y != element.y + element.height {
+                var y = element.y + element.height
+                for i in (id+1)..<elements.count {
+                    var e = elements[i]
+                    e.y = y
+                    e.display()
+                    y += e.height
+                }
+            }
+        }
+        
+        if cursorY != element.y {
+            moveDown(cursorY - element.y)
+        }
+        if let last = elements.last {
+            cursorY = last.y + last.height
+        }else{
+            cursorY = 0
         }
     }
     enum ArrowDirection {
