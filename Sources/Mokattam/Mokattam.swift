@@ -176,7 +176,7 @@ public class Column<T> {
     let name: Printable
     let formatter: (T)->Printable
     let alignment: TextAlignment
-    public init(name: String, formatter: @escaping (T)->Printable, alignment: TextAlignment = .left) {
+    public init(name: Printable, formatter: @escaping (T)->Printable, alignment: TextAlignment = .left) {
         self.name = name
         self.formatter = formatter
         self.alignment = alignment
