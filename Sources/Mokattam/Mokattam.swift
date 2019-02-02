@@ -479,7 +479,7 @@ public class Mokattam {
         }
         
         if cursorY != element.y {
-            moveDown(cursorY - element.y)
+            moveDown(cursorY - element.y - 1)
         }
         if let last = elements.last {
             cursorY = last.y + last.height
